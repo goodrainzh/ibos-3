@@ -1,0 +1,57 @@
+FROM ubuntu:trusty
+MAINTAINER Fernando Mayo <fernando@tutum.co>, Feng Honglin <hfeng@tutum.co>
+
+# Install packages
+ENV DEBIAN_FRONTEND noninteractive
+RUN apt-get update && \
+  apt-get -y install supervisor git pwgen curl && \
+  apt-get -y install apache2 php5 php5-common php5-cli libapache2-mod-php5 php5-xmlrpc libapache2-mod-fastcgi php5-mysql php-apc php5-mcrypt php5-gd libcurl3 php5-curl && \
+  apt-get install build-essential php5-dev libbz2-dev libmysqlclient-dev libxpm-dev libmcrypt-dev libcurl4-gnutls-dev libxml2-dev libjpeg-dev libpng12-dev libcurl3-dev && \
+  echo "ServerName localhost" >> /etc/apache2/apache2.conf
+
+# Install PHP5.3.29
+RUN mkdir /usr/local/src/php5-build
+WORKDIR /usr/local/src/php5-build
+RUN wget -O php-5.3.29.tar.gz http://de1.php.net/get/php-5.3.29.tar.gz/from/this/mirror
+RUN tar -xzf php-5.3.29.tar.gz
+WORKDIR /usr/local/src/php5-build/php-5.3.29
+
+RUN ./configure --prefix=/usr/share/php53 --datadir=/usr/share/php53 --mandir=/usr/share/man --bindir=/usr/bin/php53 --includedir=/usr/include/php53 --sysconfdir=/etc/php53/apache2 --with-config-file-path=/etc/php53/apache2 --with-config-file-scan-dir=/etc/php53/conf.d --enable-bcmath --with-curl=shared,/usr --with-mcrypt=shared,/usr --enable-cli --with-gd --with-mysql --with-mysqli --enable-libxml --enable-session --enable-xml --enable-simplexml --enable-filter --enable-inline-optimization --with-jpeg-dir --with-png-dir --with-zlib --with-bz2 --with-curl --enable-exif --enable-soap --with-pic --disable-rpath --disable-static --enable-shared --with-gnu-ld --enable-mbstring
+
+RUN make && make install
+
+# Add image configuration and scripts
+ADD start-apache2.sh /start-apache2.sh
+ADD run.sh /run.sh
+RUN chmod 755 /*.sh
+ADD supervisord-apache2.conf /etc/supervisor/conf.d/supervisord-apache2.conf
+
+# config to enable .htaccess
+ADD apache_default /etc/apache2/sites-available/000-default.conf
+RUN a2enmod rewrite
+
+# Configure /app folder with sample app
+RUN apt-get -y install unzip
+ADD IBOS_3.7Pro7698.zip /tmp/IBOS_3.7PRO.zip
+RUN unzip -d /app/ /tmp/IBOS_3.7PRO.zip 
+
+ADD zend-loader-php5.5-linux-x86_64.tar.gz /app
+ADD zend.ini /etc/php5/mods-available/zend.ini
+RUN ln -s /etc/php5/mods-available/zend.ini /etc/php5/apache2/conf.d/zend.ini && \
+    ln -s /etc/php5/mods-available/zend.ini /etc/php5/cli/conf.d/zend.ini
+
+RUN chmod -R 777 /app
+RUN mkdir -p /app && rm -fr /var/www/html && ln -s /app /var/www/html
+ADD config.php /app/system/config/config.php
+RUN chmod -R 777 /app
+
+#Enviornment variables to configure php
+ENV PHP_UPLOAD_MAX_FILESIZE 50M
+ENV PHP_POST_MAX_SIZE 50M
+
+VOLUME /data
+EXPOSE 80
+
+RUN rm -rf /tmp/* 
+
+CMD ["/run.sh"]
